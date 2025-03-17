@@ -1,0 +1,3 @@
+load("/Users/ivanyu/Desktop/STA141AProject/Data/session1.rds")
+load("/Users/ivanyu/Desktop/STA141AProject/Data/session2.rds")
+load("/Users/ivanyu/Desktop/STA141AProject/Data/session1.rds")

@@ -1,0 +1,436 @@
+---
+title: "Predicting Mice Tendicies through Stimulation"
+date: "3/17/25"
+output: html_document
+---
+
+## Overview
+
+This document contains instructions on the **course project** for STA 141A Winter 2025. This document is made with `R markdown`. The `rmd` file to generate this document is available on the course website. 
+
+# Background
+
+
+In this project, we analyze a subset of data collected by Steinmetz et al. (2019). While this document provides the basic understanding of the experiments, it is highly recommended that one consults the original publication for a more comprehensive understanding in order to improve the quality of the analysis report.
+
+
+In the study conducted by Steinmetz et al. (2019), experiments were performed on a total of 10 mice over 39 sessions. Each session comprised several hundred trials, during which visual stimuli were randomly presented to the mouse on two screens positioned on both sides of it. The stimuli varied in terms of contrast levels, which took values in {0, 0.25, 0.5, 1}, with 0 indicating the absence of a stimulus. The mice were required to make decisions based on the visual stimuli, using a wheel controlled by their forepaws. A reward or penalty (i.e., feedback) was subsequently administered based on the outcome of their decisions. In particular, 
+
+- When left contrast > right contrast, success (1) if turning the wheel to the right and failure (-1) otherwise.  
+- When right contrast > left contrast, success (1) if turning the wheel to the left and failure (-1) otherwise.  
+- When both left and right contrasts are zero, success (1) if holding the wheel still and failure (-1) otherwise. 
+- When left and right contrasts are equal but non-zero, left or right will be randomly chosen (50%) as the correct choice. 
+
+
+The activity of the neurons in the mice's visual cortex was recorded during the trials and made available in the form of spike trains, which are collections of timestamps corresponding to neuron firing. In this project, we focus specifically on the spike trains of neurons from the onset of the stimuli to 0.4 seconds post-onset. In addition, we only use 18 sessions (Sessions 1 to 18) from four mice: Cori, Frossman, Hence, and Lederberg.
+
+
+# Data structure 
+
+---
+
+A total of 18 RDS files are provided that contain the records from 18 sessions. In each RDS file, you can find the name of mouse from `mouse_name` and date of the experiment from `date_exp`. 
+
+```{r}
+library(ggplot2)
+library(dbplyr)
+library(tidyverse)
+library(caret)
+library(ROCR)
+```
+
+```{r echo=TRUE, eval=TRUE}
+
+session=list()
+for(i in 1:18){
+  session[[i]]=readRDS(paste('./Data/session',i,'.rds',sep=''))
+  #print(session[[i]]$mouse_name)
+  #print(session[[i]]$date_exp)
+}
+```
+
+
+# Question of interest
+
+
+The primary objective of this project is to build a predictive model to predict the outcome (i.e., feedback type) of each trial using the neural activity data (i.e., spike trains in `spks`), along with the stimuli (the left and right contrasts). Given the complexity of the data (and that this is a course project), we break the predictive modeling into three parts as follows. 
+
+Part 1. Exploratory data analysis. In this part, we will explore the features of the data sets in order to build our prediction model. In particular, we would like to (i) describe the data structures across sessions (e.g., number of neurons, number of trials, stimuli conditions, feedback types), (ii) explore the neural activities during each trial, (iii) explore the changes across trials, and (iv) explore homogeneity and heterogeneity across sessions and mice. 
+
+
+Part 2. Data integration. Using the findings in Part 1, we will propose an approach to combine data across trials by (i) extracting the shared patters across sessions and/or (ii) addressing the differences between sessions. The goal of this part is to enable the borrowing of information across sessions to enhance the prediction performance in Part 3. 
+
+Part 3. Model training and prediction. Finally, we will build a prediction model to predict the outcome (i.e., feedback types). The performance will be evaluated on two test sets of 100 trials randomly selected from Session 1 and Session 18, respectively. The test sets will be released on the day of submission when you need to evaluate the performance of your model. 
+
+# Predicting Mice after Stimulation
+
+# Abstract
+
+
+# Introduction
+In this project, an experiment is conducted on mice to see how they responded to certain stimuli in the left and right side of their brain by turning a wheel. We will build a predictive model to predict the outcome of feedback type using the neural activity data with variables such as the number of spikes and brain area, as well as the stimuli.
+Five variables are available for each trial, namely:
+- `feedback_type`: type of the feedback, 1 for success and -1 for failure
+- `contrast_left`: contrast of the left stimulus, if contrast left > contrast right and the wheel is turned to the right,it is a success, otherwise it is a failure.
+- `contrast_right`: contrast of the right stimulus, if contrast right > contrast left and the wheel is turned to the left, it is a sucecess, otherwise it is a failure.
+If both contrasts is 0, the success depends on whether or not the mice is holding the wheel still.
+If both contrasts are equal but not zero, one is chosen through 50%.
+- `time`: centers of the time bins for `spks`  
+- `spks`: numbers of spikes of neurons in the visual cortex in time bins defined in `time`
+- `brain_area`: area of the brain where each neuron lives.
+The prediction will be based on the total amount of feedback_type across all 18 sessions, the average spikes, and the decision of the mice stimuli.
+
+
+# Step 1:
+
+First, I separated each session into each session by number, 1-18. I then created a data frame with all the variables with similar length so I can view the relationship between certain variables. These variables iunclude spks: number of spikes in time, time, contrast_left and contrast_right, and feedbacl_type. I also wanted to see what the most common brain area where the neuron lived. Since we know that the name for the first three sessions is Cori and the next four is Forssmann, and the next 4 is Hench, and the last seven being Lederberg. This means I can group the sessions by name as they are just different dates.
+
+
+# Session 1: 
+The most common brain_area was VISp with 178. With the average spikes at 0.038. There were more success in this session than failures. The mice name was Cori.
+```{r}
+s1 = session[[1]]
+summary(s1)
+brain_area = data.frame(s1$brain_area)
+brain_area %>% count(s1$brain_area, sort = TRUE)
+table(s1$brain_area)
+
+
+spks = as.numeric(unlist(s1$spks))
+time = as.numeric(unlist(s1$time))
+df = data.frame(spks, time,contrast_left = s1$contrast_left, contrast_right = s1$contrast_right, feedback_type = s1$feedback_type)
+count(df, spks)
+mean(spks)
+ggplot(df) + geom_bar(mapping = aes(x=spks), title = "Count of Spikes")
+ggplot(df) + geom_bar(mapping = aes(x=feedback_type), binwidth = 2)
+ggplot(df, aes(x = feedback_type, y = spks))
+
+```
+# Session 2: 
+The most common brain_area was VISp with 178. With the average spikes at 0.038. There were more success in this session than failures. The mice name was Cori.
+```{r}
+s2 = session[[2]]
+summary(s2)
+brain_area = data.frame(s2$brain_area)
+brain_area %>% count(s2$brain_area, sort = TRUE)
+table(s2$brain_area)
+
+spks = as.numeric(unlist(s2$spks))
+time = as.numeric(unlist(s2$time))
+df = data.frame(spks, time,contrast_left = s2$contrast_left, contrast_right = s2$contrast_right, feedback_type = s2$feedback_type)
+count(df, spks)
+ggplot(df) + geom_bar(mapping = aes(x=spks))
+ggplot(df) + geom_bar(mapping = aes(x=feedback_type), binwidth = 2)
+```
+```{r}
+s3 = session[[3]]
+summary(s3)
+spks = as.numeric(unlist(s3$spks))
+time = as.numeric(unlist(s3$time))
+brain_area = data.frame(s3$brain_area)
+brain_area %>% count(s3$brain_area, sort = TRUE)
+df = data.frame(spks, time,contrast_left = s3$contrast_left, contrast_right = s3$contrast_right, feedback_type = s3$feedback_type)
+count(df, spks)
+ggplot(df) + geom_bar(mapping = aes(x=spks))
+ggplot(df) + geom_bar(mapping = aes(x=feedback_type), binwidth = 2)
+```
+```{r}
+s4 = session[[4]]
+summary(s4)
+spks = as.numeric(unlist(s4$spks))
+time = as.numeric(unlist(s4$time))
+brain_area = data.frame(s4$brain_area)
+brain_area %>% count(s4$brain_area, sort = TRUE)
+df = data.frame(spks, time, contrast_left = s4$contrast_left, contrast_right = s4$contrast_right, feedback_type = s4$feedback_type)
+count(df, spks)
+ggplot(df) + geom_bar(mapping = aes(x=spks))
+ggplot(df) + geom_bar(mapping = aes(x=feedback_type), binwidth = 2)
+
+```
+
+```{r}
+s5 = session[[5]]
+summary(s5)
+spks = as.numeric(unlist(s5$spks))
+time = as.numeric(unlist(s5$time))
+brain_area = data.frame(s5$brain_area)
+brain_area %>% count(s5$brain_area, sort = TRUE)
+df = data.frame(spks, time, contrast_left = s5$contrast_left, contrast_right = s5$contrast_right,feedback_type = s5$feedback_type)
+count(df, spks)
+ggplot(df) + geom_bar(mapping = aes(x=spks))
+ggplot(df) + geom_bar(mapping = aes(x=feedback_type), binwidth = 2)
+```
+
+```{r}
+s6 = session[[6]]
+summary(s6)
+spks = as.numeric(unlist(s6$spks))
+time = as.numeric(unlist(s6$time))
+brain_area = data.frame(s6$brain_area)
+brain_area %>% count(s6$brain_area, sort = TRUE)
+df = data.frame(spks, time, contrast_left = s6$contrast_left, contrast_right = s6$contrast_right, feedback_type = s6$feedback_type)
+count(df, spks)
+ggplot(df) + geom_bar(mapping = aes(x=spks))
+ggplot(df) + geom_bar(mapping = aes(x=feedback_type), binwidth = 2)
+```
+
+```{r}
+s7 = session[[7]]
+summary(s7)
+spks = as.numeric(unlist(s7$spks))
+time = as.numeric(unlist(s7$time))
+brain_area = data.frame(s7$brain_area)
+brain_area %>% count(s7$brain_area, sort = TRUE)
+df = data.frame(spks, time, contrast_left = s7$contrast_left, contrast_right = s7$contrast_right, feedback_type = s7$feedback_type
+  )
+count(df, spks)
+ggplot(df) + geom_bar(mapping = aes(x=spks))
+ggplot(df) + geom_bar(mapping = aes(x=feedback_type), binwidth = 2)
+```
+
+```{r}
+s8 = session[[8]]
+summary(s8)
+spks = as.numeric(unlist(s8$spks))
+time = as.numeric(unlist(s8$time))
+brain_area = data.frame(s8$brain_area)
+brain_area %>% count(s8$brain_area, sort = TRUE)
+df = data.frame(spks, time, contrast_left = s8$contrast_left, contrast_right = s8$contrast_right, feedback_type = s8$feedback_type)
+count(df, spks)
+ggplot(df) + geom_bar(mapping = aes(x=spks))
+ggplot(df) + geom_bar(mapping = aes(x=feedback_type), binwidth = 2)
+```
+```{r}
+s9 = session[[9]]
+summary(s9)
+spks = as.numeric(unlist(s9$spks))
+time = as.numeric(unlist(s9$time))
+brain_area = data.frame(s9$brain_area)
+brain_area %>% count(s9$brain_area, sort = TRUE)
+df = data.frame(spks, time, contrast_left = s9$contrast_left, contrast_right = s9$contrast_right, feedback_type = s9$feedback_type)
+count(df, spks)
+ggplot(df) + geom_bar(mapping = aes(x=spks))
+ggplot(df) + geom_bar(mapping = aes(x=feedback_type), binwidth = 2)
+```
+```{r}
+s10 = session[[10]]
+summary(s10)
+spks = as.numeric(unlist(s10$spks))
+time = as.numeric(unlist(s10$time))
+brain_area = data.frame(s10$brain_area)
+brain_area %>% count(s10$brain_area, sort = TRUE)
+df = data.frame(spks, time,contrast_left = s10$contrast_left, contrast_right = s10$contrast_right, feedback_type = s10$feedback_type)
+count(df, spks)
+ggplot(df) + geom_bar(mapping = aes(x=spks))
+ggplot(df) + geom_bar(mapping = aes(x=feedback_type), binwidth = 2)
+```
+```{r}
+s11 = session[[11]]
+summary(s11)
+spks = as.numeric(unlist(s11$spks))
+time = as.numeric(unlist(s11$time))
+brain_area = data.frame(s11$brain_area)
+brain_area %>% count(s11$brain_area, sort = TRUE)
+df = data.frame(spks, time, contrast_left = s11$contrast_left, contrast_right = s11$contrast_right, feedback_type = s11$feedback_type)
+count(df, spks)
+ggplot(df) + geom_bar(mapping = aes(x=spks))
+ggplot(df) + geom_bar(mapping = aes(x=feedback_type), binwidth = 2)
+```
+
+```{r}
+s12 = session[[12]]
+summary(s12)
+spks = as.numeric(unlist(s12$spks))
+time = as.numeric(unlist(s12$time))
+brain_area = data.frame(s12$brain_area)
+brain_area %>% count(s12$brain_area, sort = TRUE)
+df = data.frame(spks,time, contrast_left = s12$contrast_left, contrast_right = s12$contrast_right, feedback_type = s12$feedback_type)
+count(df, spks)
+ggplot(df) + geom_bar(mapping = aes(x=spks))
+ggplot(df) + geom_bar(mapping = aes(x=feedback_type), binwidth = 2)
+```
+```{r}
+s13 = session[[13]]
+summary(s13)
+spks = as.numeric(unlist(s13$spks))
+time = as.numeric(unlist(s13$time))
+brain_area = data.frame(s13$brain_area)
+brain_area %>% count(s13$brain_area, sort = TRUE)
+df = data.frame(spks,time,contrast_left = s13$contrast_left, contrast_right = s13$contrast_right, feedback_type = s13$feedback_type)
+count(df, spks)
+ggplot(df) + geom_bar(mapping = aes(x=spks))
+ggplot(df) + geom_bar(mapping = aes(x=feedback_type), binwidth = 2)
+```
+```{r}
+s14 = session[[14]]
+summary(s14)
+spks = as.numeric(unlist(s14$spks))
+time = as.numeric(unlist(s14$time))
+brain_area = data.frame(s14$brain_area)
+brain_area %>% count(s14$brain_area, sort = TRUE)
+df = data.frame(spks, time, contrast_left = s14$contrast_left, contrast_right = s14$contrast_right, feedback_type = s14$feedback_type)
+count(df, spks)
+ggplot(df) + geom_bar(mapping = aes(x=spks))
+ggplot(df) + geom_bar(mapping = aes(x=feedback_type), binwidth = 2)
+```
+```{r}
+s15 = session[[15]]
+summary(s15)
+spks = as.numeric(unlist(s15$spks))
+time = as.numeric(unlist(s15$time))
+brain_area = data.frame(s15$brain_area)
+brain_area %>% count(s15$brain_area, sort = TRUE)
+df = data.frame(spks, time, contrast_left = s15$contrast_left, contrast_right = s15$contrast_right, feedback_type = s15$feedback_type)
+count(df, spks)
+ggplot(df) + geom_bar(mapping = aes(x=spks))
+ggplot(df) + geom_bar(mapping = aes(x=feedback_type), binwidth = 2)
+```
+```{r}
+s16 = session[[16]]
+summary(s16)
+spks = as.numeric(unlist(s16$spks))
+time = as.numeric(unlist(s16$time))
+brain_area = data.frame(s16$brain_area)
+brain_area %>% count(s16$brain_area, sort = TRUE)
+df = data.frame(spks, time,  contrast_left = s16$contrast_left, contrast_right = s16$contrast_right, feedback_type = s16$feedback_type)
+count(df, spks)
+ggplot(df) + geom_bar(mapping = aes(x=spks))
+ggplot(df) + geom_bar(mapping = aes(x=feedback_type), binwidth = 2)
+```
+```{r}
+s17 = session[[17]]
+summary(s17)
+spks = as.numeric(unlist(s17$spks))
+time = as.numeric(unlist(s17$time))
+brain_area = data.frame(s17$brain_area)
+brain_area %>% count(s17$brain_area, sort = TRUE)
+df = data.frame(spks, time, contrast_left = s17$contrast_left, contrast_right = s17$contrast_right, feedback_type = s17$feedback_type)
+count(df, spks)
+ggplot(df) + geom_bar(mapping = aes(x=spks))
+ggplot(df) + geom_bar(mapping = aes(x=feedback_type), binwidth = 2)
+```
+
+```{r}
+s18 = session[[18]]
+summary(s18)
+spks = as.numeric(unlist(s18$spks))
+time = as.numeric(unlist(s18$time))
+brain_area = data.frame(s18$brain_area)
+brain_area %>% count(s18$brain_area, sort = TRUE)
+df = data.frame(spks, time, contrast_left = s18$contrast_left, contrast_right = s18$contrast_right, feedback_type = s18$feedback_type)
+count(df, spks)
+ggplot(df) + geom_bar(mapping = aes(x=spks))
+ggplot(df) + geom_bar(mapping = aes(x=feedback_type), binwidth = 2)
+
+```
+# Data Integration: 
+Total Feedback_Type across on 18 sessions.
+Avg Spks across all 18 sessions.
+Decision is based off of contrast left and right where 4 factors are used: 1, 2, 3, 4.
+
+
+
+```{r}
+dats = tibble()
+for (x in 1:18) {
+brain_area = data.frame(session[[x]]$brain_area)
+
+
+}
+
+for (i in 1:18) {
+    n_obs = length(session[[i]]$feedback_type)
+
+    
+    dat = tibble(feedback_type = as.factor(session[[i]]$feedback_type), decision = rep('name', n_obs), avg_spikes = rep(0, n_obs)
+    )
+
+    for (j in 1:n_obs){
+
+        if (session[[i]]$contrast_left[j] > session[[i]]$contrast_right[j]){
+            dat$decision[j] = '1' 
+        } else if (session[[i]]$contrast_left[j] < session[[i]]$contrast_right[j]){
+            dat$decision[i] = '2' 
+        } else if (session[[i]]$contrast_left[j] == session[[i]]$contrast_right[j] 
+                   & session[[i]]$contrast_left[j] == 0){
+            dat$decision[j] = '3' 
+        } else{
+            dat$decision[j] = '4' 
+        }
+
+       
+        spks.trial = session[[i]]$spks[[j]]
+        total.spikes = apply(spks.trial, 1, sum)
+        dat$avg_spikes[j] = mean(total.spikes)
+    }
+
+    dat$decision = as.factor(dat$decision)
+
+    
+    dats = bind_rows(dats, dat)
+}
+print(brain_area)
+
+summary(dats)
+```
+
+# Predictive Modeling
+```{r}
+set.seed(101)
+sample = sample.int(n = n_obs, size = floor(.8 * n_obs), replace = F)
+train = dats[sample, ]
+test = dats[-sample,]
+fit1 = glm(feedback_type~., data = train, family="binomial")
+summary(fit1)
+pred1 = predict(fit1, test %>% select(-feedback_type), type = 'response')
+prediction1 = factor(pred1 > 0.5, labels = c('-1', '1'))
+mean(prediction1 != test$feedback_type)
+cm = confusionMatrix(prediction1, test$feedback_type, dnn = c("Prediction", "Reference"))
+
+plt = as.data.frame(cm$table)
+
+ggplot(plt, aes(Reference, Prediction, fill= Freq)) +
+        geom_tile() + geom_text(aes(label=Freq)) +
+        scale_fill_gradient(low="white", high="#009194") +
+        labs(x = "Reference",y = "Prediction") +
+        scale_x_discrete(labels=c("-1","1")) +
+        scale_y_discrete(labels=c("-1","1"))
+pr = prediction(pred1, test$feedback_type)
+prf = performance(pr, measure = "tpr", x.measure = "fpr")
+plot(prf, main = 'ROC curve')
+
+```
+# Performance
+```{r}
+
+  testdata=list()
+  for(i in 1:2){
+    testdata[[i]]=readRDS(paste('./Test/test',i,'.rds',sep=''))
+    #print(session[[i]]$mouse_name)
+    #print(session[[i]]$date_exp)
+  }
+
+summary(testdata[[1]])
+summary(testdata[[2]])
+
+
+
+```
+
+# Discussion
+
+
+
+
+**Remark**: One important thing to note is that a course project is not an exam where questions on the exam are kept confidential. Instead, the instructor and TAs are more than happy to share with you our thoughts on how to improve your projects before you submit them. From a practical perspective, it is more rewarding to solicit advice and suggestions before we grade your reports than to wait for feedback afterwards. That said, we understand that you may have other courses and obligations that are more important than this course. Therefore, all submissions and attendance are optional except for the final project report due on June 12th.
+
+# Reference {-}
+GEEKSFORGEEKS: Exploratory Data Analysis In R
+Discussion: Project Demo
+Discussion: Logistic Regression
+Lecture: Chapter 6: Prediction
+
+
+Steinmetz, N.A., Zatka-Haas, P., Carandini, M. et al. Distributed coding of choice, action and engagement across the mouse brain. Nature 576, 266–273 (2019). https://doi.org/10.1038/s41586-019-1787-x
+
+
