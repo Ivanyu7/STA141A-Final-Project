@@ -4,10 +4,6 @@ date: "3/17/25"
 output: html_document
 ---
 
-## Overview
-
-This document contains instructions on the **course project** for STA 141A Winter 2025. This document is made with `R markdown`. The `rmd` file to generate this document is available on the course website. 
-
 # Background
 
 
@@ -31,12 +27,14 @@ The activity of the neurons in the mice's visual cortex was recorded during the 
 
 A total of 18 RDS files are provided that contain the records from 18 sessions. In each RDS file, you can find the name of mouse from `mouse_name` and date of the experiment from `date_exp`. 
 
-```{r}
+```{r echo = FALSE, eval = TRUE}
 library(ggplot2)
 library(dbplyr)
 library(tidyverse)
 library(caret)
 library(ROCR)
+library(rpart)
+library(rpart.plot)
 ```
 
 ```{r echo=TRUE, eval=TRUE}
@@ -62,9 +60,9 @@ Part 2. Data integration. Using the findings in Part 1, we will propose an appro
 
 Part 3. Model training and prediction. Finally, we will build a prediction model to predict the outcome (i.e., feedback types). The performance will be evaluated on two test sets of 100 trials randomly selected from Session 1 and Session 18, respectively. The test sets will be released on the day of submission when you need to evaluate the performance of your model. 
 
-# Predicting Mice after Stimulation
 
 # Abstract
+Some things that could be improved, is a more detailed analysis on the EDA portion. Instead of bar graphs, boxplots or cluster graphs could be used as well. Combining the sessions by mice name and ignoring the date as factor could be further in this model. This could help better visualize the importance of each variable. In addition figuring out if brain area affects the success rate or not could be found if the brain area data set was decreased. Another predicitive model could've been used as well such as XGBoost.  
 
 
 # Introduction
@@ -80,10 +78,7 @@ If both contrasts are equal but not zero, one is chosen through 50%.
 - `brain_area`: area of the brain where each neuron lives.
 The prediction will be based on the total amount of feedback_type across all 18 sessions, the average spikes, and the decision of the mice stimuli.
 
-
-# Step 1:
-
-First, I separated each session into each session by number, 1-18. I then created a data frame with all the variables with similar length so I can view the relationship between certain variables. These variables iunclude spks: number of spikes in time, time, contrast_left and contrast_right, and feedbacl_type. I also wanted to see what the most common brain area where the neuron lived. Since we know that the name for the first three sessions is Cori and the next four is Forssmann, and the next 4 is Hench, and the last seven being Lederberg. This means I can group the sessions by name as they are just different dates.
+First, I separated each session into each session by number, 1-18. I then created a data frame with all the variables with similar length so I can view the relationship between certain variables. These variables iunclude spks: number of spikes in time, time, contrast_left and contrast_right, and feedback_type. I also wanted to see what the most common brain area where the neuron lived. The date can be ignored as the factor of the date should not impact feedback. The first three mice names are Cori, followed by the next four which are Forssmann, followed by the next four, Hench, and followed by the last seven, Lederberg.
 
 
 # Session 1: 
@@ -101,13 +96,11 @@ time = as.numeric(unlist(s1$time))
 df = data.frame(spks, time,contrast_left = s1$contrast_left, contrast_right = s1$contrast_right, feedback_type = s1$feedback_type)
 count(df, spks)
 mean(spks)
-ggplot(df) + geom_bar(mapping = aes(x=spks), title = "Count of Spikes")
-ggplot(df) + geom_bar(mapping = aes(x=feedback_type), binwidth = 2)
-ggplot(df, aes(x = feedback_type, y = spks))
-
+ggplot(df) + geom_bar(mapping = aes(x=spks)) + labs(title = "Count of spikes")
+ggplot(df) + geom_bar(mapping = aes(x=feedback_type)) + labs(title = "Count of Feedback_Type")
 ```
 # Session 2: 
-The most common brain_area was VISp with 178. With the average spikes at 0.038. There were more success in this session than failures. The mice name was Cori.
+The most common brain_area was VISpm with 302. With the average spikes at 0.032. There were more success in this session than failures. The mice name was Cori.
 ```{r}
 s2 = session[[2]]
 summary(s2)
@@ -119,9 +112,12 @@ spks = as.numeric(unlist(s2$spks))
 time = as.numeric(unlist(s2$time))
 df = data.frame(spks, time,contrast_left = s2$contrast_left, contrast_right = s2$contrast_right, feedback_type = s2$feedback_type)
 count(df, spks)
-ggplot(df) + geom_bar(mapping = aes(x=spks))
-ggplot(df) + geom_bar(mapping = aes(x=feedback_type), binwidth = 2)
+mean(spks)
+ggplot(df) + geom_bar(mapping = aes(x=spks)) + labs(title = "Count of spikes")
+ggplot(df) + geom_bar(mapping = aes(x=feedback_type)) + labs(title = "Count of Feedback_Type")
 ```
+# Session 3: 
+The most common brain_area was MG with 137. With the average spikes at 0.056. There were more success in this session than failures. The mice name was Cori.
 ```{r}
 s3 = session[[3]]
 summary(s3)
@@ -131,9 +127,12 @@ brain_area = data.frame(s3$brain_area)
 brain_area %>% count(s3$brain_area, sort = TRUE)
 df = data.frame(spks, time,contrast_left = s3$contrast_left, contrast_right = s3$contrast_right, feedback_type = s3$feedback_type)
 count(df, spks)
-ggplot(df) + geom_bar(mapping = aes(x=spks))
-ggplot(df) + geom_bar(mapping = aes(x=feedback_type), binwidth = 2)
+mean(spks)
+ggplot(df) + geom_bar(mapping = aes(x=spks)) + labs(title = "Count of spikes")
+ggplot(df) + geom_bar(mapping = aes(x=feedback_type)) + labs(title = "Count of Feedback_Type")
 ```
+# Session 4: 
+The most common brain_area was LSr with 435. With the average spikes at 0.021. There were more success in this session than failures. The mice name was Forssmann.
 ```{r}
 s4 = session[[4]]
 summary(s4)
@@ -143,11 +142,13 @@ brain_area = data.frame(s4$brain_area)
 brain_area %>% count(s4$brain_area, sort = TRUE)
 df = data.frame(spks, time, contrast_left = s4$contrast_left, contrast_right = s4$contrast_right, feedback_type = s4$feedback_type)
 count(df, spks)
-ggplot(df) + geom_bar(mapping = aes(x=spks))
-ggplot(df) + geom_bar(mapping = aes(x=feedback_type), binwidth = 2)
+mean(spks)
+ggplot(df) + geom_bar(mapping = aes(x=spks)) + labs(title = "Count of spikes")
+ggplot(df) + geom_bar(mapping = aes(x=feedback_type)) + labs(title = "Count of Feedback_Type")
 
 ```
-
+# Session 5: 
+The most common brain_area was root with 524. With the average spikes at 0.028. There were more success in this session than failures. The mice name was Forssmann.
 ```{r}
 s5 = session[[5]]
 summary(s5)
@@ -157,10 +158,12 @@ brain_area = data.frame(s5$brain_area)
 brain_area %>% count(s5$brain_area, sort = TRUE)
 df = data.frame(spks, time, contrast_left = s5$contrast_left, contrast_right = s5$contrast_right,feedback_type = s5$feedback_type)
 count(df, spks)
-ggplot(df) + geom_bar(mapping = aes(x=spks))
-ggplot(df) + geom_bar(mapping = aes(x=feedback_type), binwidth = 2)
+mean(spks)
+ggplot(df) + geom_bar(mapping = aes(x=spks)) + labs(title = "Count of spikes")
+ggplot(df) + geom_bar(mapping = aes(x=feedback_type)) + labs(title = "Count of Feedback_Type")
 ```
-
+# Session 6: 
+The most common brain_area was root with 628. With the average spikes at 0.017. There were more success in this session than failures. The mice name was Forssmann.
 ```{r}
 s6 = session[[6]]
 summary(s6)
@@ -170,10 +173,12 @@ brain_area = data.frame(s6$brain_area)
 brain_area %>% count(s6$brain_area, sort = TRUE)
 df = data.frame(spks, time, contrast_left = s6$contrast_left, contrast_right = s6$contrast_right, feedback_type = s6$feedback_type)
 count(df, spks)
-ggplot(df) + geom_bar(mapping = aes(x=spks))
-ggplot(df) + geom_bar(mapping = aes(x=feedback_type), binwidth = 2)
+mean(spks)
+ggplot(df) + geom_bar(mapping = aes(x=spks)) + labs(title = "Count of spikes")
+ggplot(df) + geom_bar(mapping = aes(x=feedback_type)) + labs(title = "Count of Feedback_Type")
 ```
-
+# Session 7: 
+The most common brain_area was CA3 with 130. With the average spikes at 0.035. There were more success in this session than failures. The mice name was Forssmann.
 ```{r}
 s7 = session[[7]]
 summary(s7)
@@ -184,10 +189,12 @@ brain_area %>% count(s7$brain_area, sort = TRUE)
 df = data.frame(spks, time, contrast_left = s7$contrast_left, contrast_right = s7$contrast_right, feedback_type = s7$feedback_type
   )
 count(df, spks)
-ggplot(df) + geom_bar(mapping = aes(x=spks))
-ggplot(df) + geom_bar(mapping = aes(x=feedback_type), binwidth = 2)
+mean(spks)
+ggplot(df) + geom_bar(mapping = aes(x=spks)) + labs(title = "Count of spikes")
+ggplot(df) + geom_bar(mapping = aes(x=feedback_type)) + labs(title = "Count of Feedback_Type")
 ```
-
+# Session 8: 
+The most common brain_area was PO with 255. With the average spikes at 0.041. There were more success in this session than failures. The mice name was Hench.
 ```{r}
 s8 = session[[8]]
 summary(s8)
@@ -197,9 +204,12 @@ brain_area = data.frame(s8$brain_area)
 brain_area %>% count(s8$brain_area, sort = TRUE)
 df = data.frame(spks, time, contrast_left = s8$contrast_left, contrast_right = s8$contrast_right, feedback_type = s8$feedback_type)
 count(df, spks)
-ggplot(df) + geom_bar(mapping = aes(x=spks))
-ggplot(df) + geom_bar(mapping = aes(x=feedback_type), binwidth = 2)
+mean(spks)
+ggplot(df) + geom_bar(mapping = aes(x=spks)) + labs(title = "Count of spikes")
+ggplot(df) + geom_bar(mapping = aes(x=feedback_type)) + labs(title = "Count of Feedback_Type")
 ```
+# Session 9: 
+The most common brain_area was ORBm with 122. With the average spikes at 0.040. There were more success in this session than failures. The mice name was Hench.
 ```{r}
 s9 = session[[9]]
 summary(s9)
@@ -209,9 +219,12 @@ brain_area = data.frame(s9$brain_area)
 brain_area %>% count(s9$brain_area, sort = TRUE)
 df = data.frame(spks, time, contrast_left = s9$contrast_left, contrast_right = s9$contrast_right, feedback_type = s9$feedback_type)
 count(df, spks)
-ggplot(df) + geom_bar(mapping = aes(x=spks))
-ggplot(df) + geom_bar(mapping = aes(x=feedback_type), binwidth = 2)
+mean(spks)
+ggplot(df) + geom_bar(mapping = aes(x=spks)) + labs(title = "Count of spikes")
+ggplot(df) + geom_bar(mapping = aes(x=feedback_type)) + labs(title = "Count of Feedback_Type")
 ```
+# Session 10: 
+The most common brain_area was MB with 275. With the average spikes at 0.030. There were more success in this session than failures. The mice name was Hench.
 ```{r}
 s10 = session[[10]]
 summary(s10)
@@ -221,9 +234,12 @@ brain_area = data.frame(s10$brain_area)
 brain_area %>% count(s10$brain_area, sort = TRUE)
 df = data.frame(spks, time,contrast_left = s10$contrast_left, contrast_right = s10$contrast_right, feedback_type = s10$feedback_type)
 count(df, spks)
-ggplot(df) + geom_bar(mapping = aes(x=spks))
-ggplot(df) + geom_bar(mapping = aes(x=feedback_type), binwidth = 2)
+mean(spks)
+ggplot(df) + geom_bar(mapping = aes(x=spks)) + labs(title = "Count of spikes")
+ggplot(df) + geom_bar(mapping = aes(x=feedback_type)) + labs(title = "Count of Feedback_Type")
 ```
+# Session 11: 
+The most common brain_area was MOp with 447. With the average spikes at 0.031. There were more success in this session than failures. The mice name was Hench.
 ```{r}
 s11 = session[[11]]
 summary(s11)
@@ -233,10 +249,12 @@ brain_area = data.frame(s11$brain_area)
 brain_area %>% count(s11$brain_area, sort = TRUE)
 df = data.frame(spks, time, contrast_left = s11$contrast_left, contrast_right = s11$contrast_right, feedback_type = s11$feedback_type)
 count(df, spks)
-ggplot(df) + geom_bar(mapping = aes(x=spks))
-ggplot(df) + geom_bar(mapping = aes(x=feedback_type), binwidth = 2)
+mean(spks)
+ggplot(df) + geom_bar(mapping = aes(x=spks)) + labs(title = "Count of spikes")
+ggplot(df) + geom_bar(mapping = aes(x=feedback_type)) + labs(title = "Count of Feedback_Type")
 ```
-
+# Session 12: 
+The most common brain_area was MD with 126. With the average spikes at 0.042. There were more success in this session than failures. The mice name was Lederberg.
 ```{r}
 s12 = session[[12]]
 summary(s12)
@@ -246,9 +264,12 @@ brain_area = data.frame(s12$brain_area)
 brain_area %>% count(s12$brain_area, sort = TRUE)
 df = data.frame(spks,time, contrast_left = s12$contrast_left, contrast_right = s12$contrast_right, feedback_type = s12$feedback_type)
 count(df, spks)
-ggplot(df) + geom_bar(mapping = aes(x=spks))
-ggplot(df) + geom_bar(mapping = aes(x=feedback_type), binwidth = 2)
+mean(spks)
+ggplot(df) + geom_bar(mapping = aes(x=spks)) + labs(title = "Count of spikes")
+ggplot(df) + geom_bar(mapping = aes(x=feedback_type)) + labs(title = "Count of Feedback_Type")
 ```
+# Session 13: 
+The most common brain_area was PL with 184. With the average spikes at 0.061. There were more success in this session than failures. The mice name was Lederberg.
 ```{r}
 s13 = session[[13]]
 summary(s13)
@@ -258,9 +279,12 @@ brain_area = data.frame(s13$brain_area)
 brain_area %>% count(s13$brain_area, sort = TRUE)
 df = data.frame(spks,time,contrast_left = s13$contrast_left, contrast_right = s13$contrast_right, feedback_type = s13$feedback_type)
 count(df, spks)
-ggplot(df) + geom_bar(mapping = aes(x=spks))
-ggplot(df) + geom_bar(mapping = aes(x=feedback_type), binwidth = 2)
+mean(spks)
+ggplot(df) + geom_bar(mapping = aes(x=spks)) + labs(title = "Count of spikes")
+ggplot(df) + geom_bar(mapping = aes(x=feedback_type)) + labs(title = "Count of Feedback_Type")
 ```
+# Session 14: 
+The most common brain_area was MOs with 186. With the average spikes at 0.025. There were more success in this session than failures. The mice name was Lederberg.
 ```{r}
 s14 = session[[14]]
 summary(s14)
@@ -270,9 +294,12 @@ brain_area = data.frame(s14$brain_area)
 brain_area %>% count(s14$brain_area, sort = TRUE)
 df = data.frame(spks, time, contrast_left = s14$contrast_left, contrast_right = s14$contrast_right, feedback_type = s14$feedback_type)
 count(df, spks)
-ggplot(df) + geom_bar(mapping = aes(x=spks))
-ggplot(df) + geom_bar(mapping = aes(x=feedback_type), binwidth = 2)
+mean(spks)
+ggplot(df) + geom_bar(mapping = aes(x=spks)) + labs(title = "Count of spikes")
+ggplot(df) + geom_bar(mapping = aes(x=feedback_type)) + labs(title = "Count of Feedback_Type")
 ```
+# Session 15: 
+The most common brain_area was VPM with 162. With the average spikes at 0.037. There were more success in this session than failures. The mice name was Lederberg.
 ```{r}
 s15 = session[[15]]
 summary(s15)
@@ -282,9 +309,12 @@ brain_area = data.frame(s15$brain_area)
 brain_area %>% count(s15$brain_area, sort = TRUE)
 df = data.frame(spks, time, contrast_left = s15$contrast_left, contrast_right = s15$contrast_right, feedback_type = s15$feedback_type)
 count(df, spks)
-ggplot(df) + geom_bar(mapping = aes(x=spks))
-ggplot(df) + geom_bar(mapping = aes(x=feedback_type), binwidth = 2)
+mean(spks)
+ggplot(df) + geom_bar(mapping = aes(x=spks)) + labs(title = "Count of spikes")
+ggplot(df) + geom_bar(mapping = aes(x=feedback_type)) + labs(title = "Count of Feedback_Type")
 ```
+# Session 16: 
+The most common brain_area was TH with 159. With the average spikes at 0.026. There were more success in this session than failures. The mice name was Lederberg.
 ```{r}
 s16 = session[[16]]
 summary(s16)
@@ -294,9 +324,12 @@ brain_area = data.frame(s16$brain_area)
 brain_area %>% count(s16$brain_area, sort = TRUE)
 df = data.frame(spks, time,  contrast_left = s16$contrast_left, contrast_right = s16$contrast_right, feedback_type = s16$feedback_type)
 count(df, spks)
-ggplot(df) + geom_bar(mapping = aes(x=spks))
-ggplot(df) + geom_bar(mapping = aes(x=feedback_type), binwidth = 2)
+mean(spks)
+ggplot(df) + geom_bar(mapping = aes(x=spks)) + labs(title = "Count of spikes")
+ggplot(df) + geom_bar(mapping = aes(x=feedback_type)) + labs(title = "Count of Feedback_Type")
 ```
+# Session 17: 
+The most common brain_area was root with 358. With the average spikes at 0.029. There were more success in this session than failures. The mice name was Lederberg.
 ```{r}
 s17 = session[[17]]
 summary(s17)
@@ -306,10 +339,12 @@ brain_area = data.frame(s17$brain_area)
 brain_area %>% count(s17$brain_area, sort = TRUE)
 df = data.frame(spks, time, contrast_left = s17$contrast_left, contrast_right = s17$contrast_right, feedback_type = s17$feedback_type)
 count(df, spks)
-ggplot(df) + geom_bar(mapping = aes(x=spks))
-ggplot(df) + geom_bar(mapping = aes(x=feedback_type), binwidth = 2)
+mean(spks)
+ggplot(df) + geom_bar(mapping = aes(x=spks)) + labs(title = "Count of spikes")
+ggplot(df) + geom_bar(mapping = aes(x=feedback_type)) + labs(title = "Count of Feedback_Type")
 ```
-
+# Session 18: 
+The most common brain_area was TH and ZI with 175. With the average spikes at 0.027. There were more success in this session than failures. The mice name was Lederberg.
 ```{r}
 s18 = session[[18]]
 summary(s18)
@@ -319,22 +354,20 @@ brain_area = data.frame(s18$brain_area)
 brain_area %>% count(s18$brain_area, sort = TRUE)
 df = data.frame(spks, time, contrast_left = s18$contrast_left, contrast_right = s18$contrast_right, feedback_type = s18$feedback_type)
 count(df, spks)
-ggplot(df) + geom_bar(mapping = aes(x=spks))
-ggplot(df) + geom_bar(mapping = aes(x=feedback_type), binwidth = 2)
-
+mean(spks)
+ggplot(df) + geom_bar(mapping = aes(x=spks)) + labs(title = "Count of spikes")
+ggplot(df) + geom_bar(mapping = aes(x=feedback_type)) + labs(title = "Count of Feedback_Type")
 ```
+
 # Data Integration: 
 Total Feedback_Type across on 18 sessions.
 Avg Spks across all 18 sessions.
 Decision is based off of contrast left and right where 4 factors are used: 1, 2, 3, 4.
 
-
-
 ```{r}
 dats = tibble()
 for (x in 1:18) {
 brain_area = data.frame(session[[x]]$brain_area)
-
 
 }
 
@@ -357,33 +390,29 @@ for (i in 1:18) {
         } else{
             dat$decision[j] = '4' 
         }
-
-       
         spks.trial = session[[i]]$spks[[j]]
         total.spikes = apply(spks.trial, 1, sum)
         dat$avg_spikes[j] = mean(total.spikes)
     }
 
     dat$decision = as.factor(dat$decision)
-
-    
     dats = bind_rows(dats, dat)
 }
-print(brain_area)
 
 summary(dats)
 ```
 
 # Predictive Modeling
+Split data into train and test data, with 80% and 20%. Use Logisitic Regression and Confusion Matrix
 ```{r}
 set.seed(101)
-sample = sample.int(n = n_obs, size = floor(.8 * n_obs), replace = F)
-train = dats[sample, ]
-test = dats[-sample,]
+sam = sample.int(n = n_obs, size = floor(.8 * n_obs), replace = F)
+train = dats[sam, ]
+test = dats[-sam,]
 fit1 = glm(feedback_type~., data = train, family="binomial")
 summary(fit1)
-pred1 = predict(fit1, test %>% select(-feedback_type), type = 'response')
-prediction1 = factor(pred1 > 0.5, labels = c('-1', '1'))
+pred = predict(fit1, test %>% select(-feedback_type), type = 'response')
+prediction1 = factor(pred > 0.5, labels = c('-1', '1'))
 mean(prediction1 != test$feedback_type)
 cm = confusionMatrix(prediction1, test$feedback_type, dnn = c("Prediction", "Reference"))
 
@@ -395,12 +424,14 @@ ggplot(plt, aes(Reference, Prediction, fill= Freq)) +
         labs(x = "Reference",y = "Prediction") +
         scale_x_discrete(labels=c("-1","1")) +
         scale_y_discrete(labels=c("-1","1"))
-pr = prediction(pred1, test$feedback_type)
+pr = prediction(pred, test$feedback_type)
 prf = performance(pr, measure = "tpr", x.measure = "fpr")
 plot(prf, main = 'ROC curve')
 
 ```
-# Performance
+
+# Test Data
+Downloaded the test data which include 2 test data RDS files. Added a decision tree to see the difference between logistic regression and decision tree.
 ```{r}
 
   testdata=list()
@@ -412,23 +443,91 @@ plot(prf, main = 'ROC curve')
 
 summary(testdata[[1]])
 summary(testdata[[2]])
+dats = tibble()
+for (x in 1:2) {
+brain_area = data.frame(testdata[[x]]$brain_area)
+}
 
+for (i in 1:2) {
+    n_obs = length(testdata[[i]]$feedback_type)
 
+    
+    dat = tibble(feedback_type = as.factor(testdata[[i]]$feedback_type), decision = rep('name', n_obs), avg_spikes = rep(0, n_obs)
+    )
 
+    for (j in 1:n_obs){
+
+        if (testdata[[i]]$contrast_left[j] > testdata[[i]]$contrast_right[j]){
+            dat$decision[j] = '1' 
+        } else if (testdata[[i]]$contrast_left[j] < testdata[[i]]$contrast_right[j]){
+            dat$decision[i] = '2' 
+        } else if (testdata[[i]]$contrast_left[j] == testdata[[i]]$contrast_right[j] 
+                   & testdata[[i]]$contrast_left[j] == 0){
+            dat$decision[j] = '3' 
+        } else{
+            dat$decision[j] = '4' 
+        }
+        spks.trial = testdata[[i]]$spks[[j]]
+        total.spikes = apply(spks.trial, 1, sum)
+        dat$avg_spikes[j] = mean(total.spikes)
+    }
+
+    dat$decision = as.factor(dat$decision)
+    dats = bind_rows(dats, dat)
+}
+summary(dats)
+set.seed(101)
+sam = sample.int(n = n_obs, size = floor(.8 * n_obs), replace = F)
+train = dats[sam, ]
+test = dats[-sam,]
+fit1 = glm(feedback_type~., data = train, family="binomial")
+summary(fit1)
+pred = predict(fit1, test %>% select(-feedback_type), type = 'response')
+prediction1 = factor(pred > 0.5, labels = c('-1', '1'))
+mean(prediction1 != test$feedback_type)
+cm = confusionMatrix(prediction1, test$feedback_type, dnn = c("Prediction", "Reference"))
+
+plt = as.data.frame(cm$table)
+
+ggplot(plt, aes(Reference, Prediction, fill= Freq)) +
+        geom_tile() + geom_text(aes(label=Freq)) +
+        scale_fill_gradient(low="white", high="#009194") +
+        labs(x = "Reference",y = "Prediction") +
+        scale_x_discrete(labels=c("-1","1")) +
+        scale_y_discrete(labels=c("-1","1"))
+pr = prediction(pred, test$feedback_type)
+prf = performance(pr, measure = "tpr", x.measure = "fpr")
+plot(prf, main = 'ROC curve')
+
+fit_tree <- rpart(feedback_type ~ ., data = train, method = "class")
+summary(fit_tree)
+rpart.plot(fit_tree, type = 2, extra = 100, main = "Decision Tree for Feedback Type")
+pred_tree <- predict(fit_tree, test, type = "class")
+cm_tree <- confusionMatrix(pred_tree, test$feedback_type, dnn = c("Prediction", "Reference"))
+print(cm_tree)
+plt_tree <- as.data.frame(cm_tree$table)
+ggplot(plt_tree, aes(Reference, Prediction, fill = Freq)) +
+  geom_tile() + 
+  geom_text(aes(label = Freq)) + 
+  scale_fill_gradient(low = "white", high = "#009194") + 
+  labs(x = "Reference", y = "Prediction") + 
+  scale_x_discrete(labels = c("-1", "1")) + 
+  scale_y_discrete(labels = c("-1", "1"))
 ```
 
+
+
 # Discussion
+At first, using Exploratory Data Analysis, I found out that across all 18 sessions,feeback type was more positive than negative which indicates that there were more success than failures. This means that the overall experiment was successful. In addition, I found the most active brain area across each session as well as the average spikes in each session and also displayed the count of the spikes. In the data integration part, I referenced the Project Demo and created a discussion variable using the 4 factors from contrast left and contrast right and included the average spikes and feedback_type. Instead of just focusing on one session, I utilized a for-loop to loop all 18 sessions to get the total feedback_type and the avg spikes across all trials. I then used these variables to train and test a logistic regression model and a confusion matrix as well using reference and prediction. Using the test data, it indicates that the prediction is off as the reference is right majority of times. I also added a decision tree and confusion matrix to compare the test data. Both predictiors are off however, the decision tree is closer than the logistic regression model. This could be because the variables such as the average spikes do not affect the feedback type that much.
 
-
-
-
-**Remark**: One important thing to note is that a course project is not an exam where questions on the exam are kept confidential. Instead, the instructor and TAs are more than happy to share with you our thoughts on how to improve your projects before you submit them. From a practical perspective, it is more rewarding to solicit advice and suggestions before we grade your reports than to wait for feedback afterwards. That said, we understand that you may have other courses and obligations that are more important than this course. Therefore, all submissions and attendance are optional except for the final project report due on June 12th.
 
 # Reference {-}
-GEEKSFORGEEKS: Exploratory Data Analysis In R
-Discussion: Project Demo
-Discussion: Logistic Regression
-Lecture: Chapter 6: Prediction
+#GEEKSFORGEEKS: Exploratory Data Analysis In R
+#Discussion: Project Demo
+#Discussion: Logistic Regression
+#Lecture: Chapter 6: Prediction
+#CHATGPT: How to loop over multiple data sets
+#CHATGPT: Decision Trees
 
 
 Steinmetz, N.A., Zatka-Haas, P., Carandini, M. et al. Distributed coding of choice, action and engagement across the mouse brain. Nature 576, 266–273 (2019). https://doi.org/10.1038/s41586-019-1787-x
